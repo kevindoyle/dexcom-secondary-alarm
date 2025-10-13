@@ -1,40 +1,7 @@
-from pydexcom import Dexcom
 import time
+from dexcom import get_glucose_number as get_dexcom_bg
 import asyncio # TODO: read https://docs.python.org/3/howto/a-conceptual-overview-of-asyncio.html#a-conceptual-overview-of-asyncio
 
-
-def get_glucose_number(username, password):
-    dexcom = Dexcom(username=username, password=password)
-    glucose_reading = dexcom.get_current_glucose_reading()
-    return glucose_reading.value
-
-def get_creds(file):
-    with open(file, 'r') as f:
-        contents = f.read().strip().split()
-        if len(contents) != 2:
-            raise ValueError("File must contain exactly two words: username and password.")
-        return contents[0], contents[1]
-
-def start_system(username, password):
-    def polling():
-        # TODO: feed values to a processing function
-        # TODO: make start_system accept a function to call here, don't hardcode the glucose call
-        return get_glucose_number(username, password)
-
-    ctrl = {"continue": True}
-    def stopper():
-        return ctrl["continue"]
-    
-    print("Starting do_polling")
-    asyncio.run(do_polling(stopper, polling, 5*60))
-
-    print("System sleep for 12 minutes")
-    sleep(12*60)
-
-    print("Stopping polling")
-    ctrl["continue"] = False
-    sleep(6*60)
-    print("The polling should have stopped")
 
 async def do_polling(stop_fn, poll_fn, update_interval):
     """
@@ -81,6 +48,55 @@ async def do_polling(stop_fn, poll_fn, update_interval):
 
     print("!! Stopped polling")
 
+
+async def start_system():
+    bg_queue = asyncio.Queue()
+
+    async def polling():
+        bg = get_dexcom_bg()
+        await bg_queue.put(bg)
+
+    should_stop = False
+    def stopper():
+            #TODO: put this onto a queue?
+            return not should_stop
+
+    async def poll_timer():
+        print("poll timer sleep for 12 minutes")
+        await asyncio.sleep(12*60)
+        print("Stopping polling")
+        should_stop = True   
+    
+    print("Starting do_polling")
+    poller = asyncio.create_task(do_polling(stopper, polling, 5*60))
+    timer = asyncio.create_task(poll_timer())
+
+    while stopper():
+        try:
+            bg = bg_queue.get_nowait()
+            print(f"bg from queue: {bg}")
+        except asyncio.QueueEmpty:
+            await asyncio.sleep(1)
+            continue
+        finally:
+            poller.cancel()
+            await gather(poller, return_exceptions=True)
+            print("polling complete")
+
+    try:
+        timer.cancel()
+        await gather(timer, return_exceptions=True)
+    except Exception as e:
+        print(f"Exception when cancelling timer: {e}")
+
+    try:
+        poller.cancel()
+        await gather(poller, return_exceptions=True)
+    except Exception as e:
+        print(f"Exception when cancelling poller (maybe the second time): {e}")
+    
+    print("end of start_system")
+
 if __name__ == "__main__":
-    user, password = get_creds('.credentials.txt')
-    start_system(user, password)
+    start_system()
+    print("end of main")
