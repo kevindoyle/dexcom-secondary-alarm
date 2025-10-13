@@ -44,7 +44,7 @@ async def do_polling(stop_fn, poll_fn, update_interval):
     # Run until stopped
     while stop_fn():
         await asyncio.sleep(update_interval)
-        bg = poll_fn()
+        bg = await poll_fn()
         print(f"glucose: {bg}")
 
     print("!! Stopped polling")
@@ -58,16 +58,16 @@ async def start_system():
         await bg_queue.put(bg)
         return bg
 
-    should_stop = False
+    ctrl = {"continue": True}
     def stopper():
-            #TODO: put this onto a queue?
-            return not should_stop
+        #TODO: put this onto a queue?
+        return ctrl["continue"]
 
     async def poll_timer():
         print("poll timer sleep for 12 minutes")
         await asyncio.sleep(12*60)
         print("Stopping polling")
-        should_stop = True   
+        ctrl["continue"] = False   
     
     print("Starting do_polling")
     poller = asyncio.create_task(do_polling(stopper, polling, update_interval()))
@@ -78,8 +78,7 @@ async def start_system():
             bg = bg_queue.get_nowait()
             print(f"bg from queue: {bg}")
         except asyncio.QueueEmpty:
-            await asyncio.sleep(5)
-            print("queue empty, sleeping")
+            await asyncio.sleep(1)
             continue
 
     try:
