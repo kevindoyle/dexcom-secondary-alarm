@@ -1,5 +1,6 @@
 import time
 from dexcom import get_glucose_number as get_dexcom_bg
+from dexcom import get_update_interval_seconds as update_interval
 import asyncio # TODO: read https://docs.python.org/3/howto/a-conceptual-overview-of-asyncio.html#a-conceptual-overview-of-asyncio
 
 
@@ -13,7 +14,7 @@ async def do_polling(stop_fn, poll_fn, update_interval):
 
     # Sync polling with update interval.
     poll_time = update_interval
-    init_val = poll_fn()
+    init_val = await poll_fn()
     # We will refine the period of updates to within 20 seconds 
     while poll_time > 20:
 
@@ -30,12 +31,12 @@ async def do_polling(stop_fn, poll_fn, update_interval):
 
         # Call the fn until the returned value is different
         update_val = init_val
-        print(f"init_val: {init_val}")
+        print(f"init_val: {init_val}, {type(init_val)}")
         while init_val == update_val:
             await asyncio.sleep(poll_time)
-            update_val = poll_fn()
+            update_val = await poll_fn()
             print(f"update_val: {update_val}")
-            print(f"init_val == update_val: {init_val==update_val}, {init_val}, {update_val}")
+            print(f"init_val == update_val: {init_val==update_val}, {init_val}, {type(init_val)}, {update_val}, {type(update_val)}")
         init_val = update_val
 
 
@@ -55,6 +56,7 @@ async def start_system():
     async def polling():
         bg = get_dexcom_bg()
         await bg_queue.put(bg)
+        return bg
 
     should_stop = False
     def stopper():
@@ -68,7 +70,7 @@ async def start_system():
         should_stop = True   
     
     print("Starting do_polling")
-    poller = asyncio.create_task(do_polling(stopper, polling, 5*60))
+    poller = asyncio.create_task(do_polling(stopper, polling, update_interval()))
     timer = asyncio.create_task(poll_timer())
 
     while stopper():
@@ -76,27 +78,24 @@ async def start_system():
             bg = bg_queue.get_nowait()
             print(f"bg from queue: {bg}")
         except asyncio.QueueEmpty:
-            await asyncio.sleep(1)
+            await asyncio.sleep(5)
+            print("queue empty, sleeping")
             continue
-        finally:
-            poller.cancel()
-            await gather(poller, return_exceptions=True)
-            print("polling complete")
 
     try:
         timer.cancel()
-        await gather(timer, return_exceptions=True)
+        await asyncio.gather(timer, return_exceptions=True)
     except Exception as e:
         print(f"Exception when cancelling timer: {e}")
 
     try:
         poller.cancel()
-        await gather(poller, return_exceptions=True)
+        await asyncio.gather(poller, return_exceptions=True)
     except Exception as e:
         print(f"Exception when cancelling poller (maybe the second time): {e}")
     
     print("end of start_system")
 
 if __name__ == "__main__":
-    start_system()
+    asyncio.run(start_system())
     print("end of main")
