@@ -23,37 +23,39 @@ async def do_polling(stop_fn, poll_fn, update_interval):
             # so we can save API calls and sleep until we're within poll_time
             # of the next update. Then we'll poll again within that subunit
             # of time to hone in on the update interval's period.
-            print("sleeping until it's time to start polling again")
+            print("do_polling: sleeping until it's time to start polling again")
             await asyncio.sleep(update_interval-poll_time)
 
         poll_time = poll_time/5
-        print(f"poll_time: {poll_time}")
+        print(f"do_polling: poll_time: {poll_time}")
 
         # Call the fn until the returned value is different
         update_val = init_val
-        print(f"init_val: {init_val}, {type(init_val)}")
+        # print(f"init_val: {init_val}, {type(init_val)}")
         while init_val == update_val:
             await asyncio.sleep(poll_time)
             update_val = await poll_fn()
-            print(f"update_val: {update_val}")
-            print(f"init_val == update_val: {init_val==update_val}, {init_val}, {type(init_val)}, {update_val}, {type(update_val)}")
+            # print(f"update_val: {update_val}")
+            # print(f"init_val == update_val: {init_val==update_val}, {init_val}, {type(init_val)}, {update_val}, {type(update_val)}")
         init_val = update_val
 
 
-    print("Starting regular interval polling")
+    print("do_polling: Starting regular interval polling")
     # Run until stopped
     while stop_fn():
         await asyncio.sleep(update_interval)
         bg = await poll_fn()
-        print(f"glucose: {bg}")
+        print(f"do_polling: {bg} mg/dL")
 
-    print("!! Stopped polling")
+    print("do_polling: Stopped polling")
 
 
-async def start_system():
+async def main_routine():
+    print("system_start: begin!")
     bg_queue = asyncio.Queue()
 
     async def polling():
+        print("polling: making api call")
         bg = get_dexcom_bg()
         await bg_queue.put(bg)
         return bg
@@ -64,19 +66,22 @@ async def start_system():
         return ctrl["continue"]
 
     async def poll_timer():
-        print("poll timer sleep for 12 minutes")
-        await asyncio.sleep(12*60)
-        print("Stopping polling")
-        ctrl["continue"] = False   
+        run_time=12*60
+        print("poll timer: sleep for {run_time} seconds")
+        await asyncio.sleep(run_time)
+        print("poll_timer: time is up, setting 'continue' to False")
+        ctrl["continue"] = False
     
-    print("Starting do_polling")
-    poller = asyncio.create_task(do_polling(stopper, polling, update_interval()))
-    timer = asyncio.create_task(poll_timer())
+    print("main_routine: Starting coroutines")
+    poll_task = do_polling(stopper, polling, update_interval())
+    poller = asyncio.create_task(poll_task)
+    timer_task = poll_timer()
+    timer = asyncio.create_task(timer_task)
 
     while stopper():
         try:
             bg = bg_queue.get_nowait()
-            print(f"bg from queue: {bg}")
+            print(f"main_routine: bg from queue {bg} mg/dL")
         except asyncio.QueueEmpty:
             await asyncio.sleep(1)
             continue
@@ -85,16 +90,16 @@ async def start_system():
         timer.cancel()
         await asyncio.gather(timer, return_exceptions=True)
     except Exception as e:
-        print(f"Exception when cancelling timer: {e}")
+        print(f"main_routine: Exception when cancelling timer: {e}")
 
     try:
         poller.cancel()
         await asyncio.gather(poller, return_exceptions=True)
     except Exception as e:
-        print(f"Exception when cancelling poller (maybe the second time): {e}")
+        print(f"main_routine: Exception when cancelling poller (maybe the second time): {e}")
     
-    print("end of start_system")
+    print("main_routine: end")
 
 if __name__ == "__main__":
-    asyncio.run(start_system())
-    print("end of main")
+    asyncio.run(main_routine())
+    print("main: end")
