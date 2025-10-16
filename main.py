@@ -98,13 +98,13 @@ async def main_routine(cgm_client):
         timer.cancel()
         await asyncio.gather(timer, return_exceptions=True)
     except Exception as e:
-        print(f"main_routine: Exception when cancelling timer: {e}")
+        print(f"main_routine: Exception from timer: {e}")
 
     try:
         poller.cancel()
         await asyncio.gather(poller, return_exceptions=True)
     except Exception as e:
-        print(f"main_routine: Exception when cancelling poller (maybe the second time): {e}")
+        print(f"main_routine: Exception from poller: {e}")
     
     print("main_routine: end")
 

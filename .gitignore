@@ -1,2 +1,4 @@
 venv/
 .credentials.txt
+tester.py
+__pycache__/
