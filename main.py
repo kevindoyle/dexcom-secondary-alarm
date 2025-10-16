@@ -1,8 +1,9 @@
 import time
-from dexcom import get_glucose_number as get_dexcom_bg
-from dexcom import get_update_interval_seconds as update_interval
-import asyncio # TODO: read https://docs.python.org/3/howto/a-conceptual-overview-of-asyncio.html#a-conceptual-overview-of-asyncio
+from collections import deque
+import asyncio # https://docs.python.org/3/howto/a-conceptual-overview-of-asyncio.html#a-conceptual-overview-of-asyncio
 
+from alert import decide_alert
+from dexcom import DexcomClient
 
 async def do_polling(stop_fn, poll_fn, update_interval):
     """
@@ -52,13 +53,13 @@ async def do_polling(stop_fn, poll_fn, update_interval):
     print("do_polling: Stopped polling")
 
 
-async def main_routine():
+async def main_routine(cgm_client):
     print("system_start: begin!")
-    bg_queue = asyncio.Queue()
+    bg_queue = cgm_client.get_result_queue()
 
     async def polling():
         print("polling: making api call")
-        bg = get_dexcom_bg()
+        bg = cgm_client.get_glucose_number()
         await bg_queue.put(bg)
         return bg
 
@@ -75,17 +76,22 @@ async def main_routine():
         ctrl["continue"] = False
     
     print("main_routine: Starting coroutines")
-    poll_task = do_polling(stopper, polling, update_interval())
+    poll_task = do_polling(stopper, polling, cgm_client.update_interval())
     poller = asyncio.create_task(poll_task)
     timer_task = poll_timer()
     timer = asyncio.create_task(timer_task)
 
+    alert_queue = deque([100,100],maxlen=2)
     while stopper():
         try:
             bg = bg_queue.get_nowait()
             print(f"main_routine: bg from queue {bg} mg/dL")
+            alert_queue.append(bg)
+            do_alert = decide_alert(alert_queue)
+            if do_alert:
+                print(f"main_routine: !!!!!!!!!")
         except asyncio.QueueEmpty:
-            await asyncio.sleep(1)
+            await asyncio.sleep(3)
             continue
 
     try:
@@ -103,5 +109,6 @@ async def main_routine():
     print("main_routine: end")
 
 if __name__ == "__main__":
-    asyncio.run(main_routine())
+    cgm_client = DexcomClient('.credentials.txt')
+    asyncio.run(main_routine(cgm_client))
     print("main: end")
