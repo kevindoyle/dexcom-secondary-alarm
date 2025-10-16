@@ -1,4 +1,23 @@
 from pydexcom import Dexcom
+import asyncio
+
+class DexcomClient():
+    def __init__(self, creds_file):
+        username, password = get_creds(creds_file)
+        self.username = username
+        self.password = password
+        self.client = Dexcom(username=username, password=password)
+        self.result_queue = asyncio.Queue()
+
+    def get_glucose_number(self):
+        glucose_reading = self.client.get_current_glucose_reading()
+        return glucose_reading.value
+
+    def get_result_queue(self):
+        return self.result_queue
+
+    def update_interval(self):
+        return 5*60
 
 
 def get_creds(file):
