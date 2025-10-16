@@ -23,7 +23,8 @@ async def do_polling(stop_fn, poll_fn, update_interval):
             # so we can save API calls and sleep until we're within poll_time
             # of the next update. Then we'll poll again within that subunit
             # of time to hone in on the update interval's period.
-            print("do_polling: sleeping until it's time to start polling again")
+            sleep_time = update_interval - poll_time
+            print(f"do_polling: sleeping for {sleep_time} seconds (until refinement period)")
             await asyncio.sleep(update_interval-poll_time)
 
         poll_time = poll_time/5
@@ -35,6 +36,7 @@ async def do_polling(stop_fn, poll_fn, update_interval):
         while init_val == update_val:
             await asyncio.sleep(poll_time)
             update_val = await poll_fn()
+            print(f"do_polling: {update_val} mg/dL")
             # print(f"update_val: {update_val}")
             # print(f"init_val == update_val: {init_val==update_val}, {init_val}, {type(init_val)}, {update_val}, {type(update_val)}")
         init_val = update_val
@@ -62,12 +64,12 @@ async def main_routine():
 
     ctrl = {"continue": True}
     def stopper():
-        #TODO: put this onto a queue?
+        #TODO: use a queue? for consistency and refactorability
         return ctrl["continue"]
 
     async def poll_timer():
-        run_time=12*60
-        print("poll timer: sleep for {run_time} seconds")
+        run_time=26*60
+        print(f"poll timer: let run for {run_time/60} minutes")
         await asyncio.sleep(run_time)
         print("poll_timer: time is up, setting 'continue' to False")
         ctrl["continue"] = False
